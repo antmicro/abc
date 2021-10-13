@@ -21,6 +21,7 @@
 
 #include "gia.h"
 #include "misc/tim/tim.h"
+#include "misc/tim/timInt.h"
 #include "base/main/main.h"
 
 ABC_NAMESPACE_IMPL_START
@@ -1112,7 +1113,7 @@ void Gia_AigerWrite( Gia_Man_t * pInit, char * pFileName, int fWriteSymbols, int
     // create normalized AIG
     if ( !Gia_ManIsNormalized(pInit) )
     {
-//        printf( "Gia_AigerWrite(): Normalizing AIG for writing.\n" );
+        printf( "Gia_AigerWrite(): Normalizing AIG for writing.\n" );
         p = Gia_ManDupNormalize( pInit, 0 );
         Gia_ManTransferMapping( p, pInit );
         Gia_ManTransferPacking( p, pInit );
@@ -1418,6 +1419,174 @@ void Gia_AigerWrite( Gia_Man_t * pInit, char * pFileName, int fWriteSymbols, int
     fprintf( pFile, "\nThis file was produced by the GIA package in ABC on %s\n", Gia_TimeStamp() );
     fprintf( pFile, "For information about AIGER format, refer to %s\n", "http://fmv.jku.at/aiger" );
     fclose( pFile );
+
+    // ==============================================================
+    // Dump data to JSON
+
+    Gia_ManCheckIntegrityWithBoxes( p );
+
+    char fname [80];
+    snprintf(fname, sizeof(fname), "%s.json", pFileName);
+    FILE* fp = fopen(fname, "w");
+
+    Tim_Man_t* t = (Tim_Man_t *)p->pManTime;
+    Tim_Box_t * pBox;
+
+    assert(t != NULL);
+
+    fprintf(fp, "{\n");
+
+    // Boxes
+    fprintf(fp, "  \"boxes\": {\n");
+    if ( t != NULL && Tim_ManBoxNum(t) > 0 ) {
+        Tim_ManForEachBox( t, pBox, i )
+        {
+            fprintf(fp, "    \"%d\": {\n", i);
+
+            fprintf(fp, "      \"i\": [");
+            for (int j=0; j<pBox->nInputs; ++j) {
+                if (j > 0) fprintf(fp, ",");
+                fprintf(fp, "%d", Tim_ManBoxInput(t, pBox, j)->Id); // CI
+                //fprintf(fp, "%d", Gia_ObjId(p, Gia_ManCo(p, Tim_ManBoxInput(t, pBox, j)->Id))); // id
+            }
+            fprintf(fp, "],\n");
+
+            fprintf(fp, "      \"o\": [");
+            for (int j=0; j<pBox->nOutputs; ++j) {
+                if (j > 0) fprintf(fp, ",");
+                fprintf(fp, "%d", Tim_ManBoxOutput(t, pBox, j)->Id); // CI
+                //fprintf(fp, "%d", Gia_ObjId(p, Gia_ManCi(p, Tim_ManBoxOutput(t, pBox, j)->Id))); // id
+            }
+            fprintf(fp, "]\n");
+
+            fprintf(fp, "    },\n");
+        }
+
+        // FIXME: remove the last comma. may not work on all OSes
+        fseek(fp, -2, SEEK_CUR);
+        fprintf(fp, "\n");
+    }
+
+    fprintf(fp, "  },\n");
+
+    // Carries
+    // Based on: Gia_ManComputeCarryOuts
+    fprintf(fp, "  \"carries\": [\n");
+    if ( t != NULL && Tim_ManBoxNum(t) > 0 ) {
+        Tim_ManForEachBox( t, pBox, i )
+        {
+            int iLast = Tim_ManBoxInputLast( t, i );
+
+            pObj = Gia_ObjFanin0( Gia_ManCo(p, iLast) );
+            if ( !Gia_ObjIsCi(pObj) )
+                continue;
+            int iBox = Tim_ManBoxForCi( t, Gia_ObjCioId(pObj) );
+            if ( iBox == -1 )
+                continue;
+
+            assert( Gia_ObjIsCi(pObj) );
+            if ( Gia_ObjCioId(pObj) == Tim_ManBoxOutputLast(t, iBox) ) {
+                // co, ci
+                fprintf(fp,"    [%d, %d],\n", Gia_ObjCioId(pObj), iLast);
+            }
+        }
+
+        // FIXME: remove the last comma. may not work on all OSes
+        fseek(fp, -2, SEEK_CUR);
+        fprintf(fp, "\n");
+    }
+
+    fprintf(fp, "  ],\n");
+
+    // CIOs
+    fprintf(fp, " \"cio\": [\n");
+    for (int i=0; i<p->nObjs; ++i) {
+        pObj = &p->pObjs[i];
+
+        if (!pObj->fTerm) {
+            continue;
+        }
+
+        fprintf(fp, "    [%d, %d],\n", Gia_ObjId(p, pObj), Gia_ObjCioId(pObj));
+    }
+
+    // FIXME: remove the last comma. may not work on all OSes
+    fseek(fp, -2, SEEK_CUR);
+    fprintf(fp, "\n");
+
+    fprintf(fp, "  ],\n");
+
+    // Nodes
+    fprintf(fp, " \"nodes\": [\n");
+
+    for (int i=0; i<p->nObjs; ++i) {
+        pObj = &p->pObjs[i];
+        fprintf(fp, "    [");
+
+        if (Gia_ObjIsTerm(pObj))      fprintf(fp, "\"term\",");
+        if (Gia_ObjIsCi(pObj))        fprintf(fp, "\"ci\",");
+        if (Gia_ObjIsCo(pObj))        fprintf(fp, "\"co\",");
+        if (Gia_ObjIsPi(p, pObj))     fprintf(fp, "\"pi\",");
+        if (Gia_ObjIsPo(p, pObj))     fprintf(fp, "\"po\",");
+        if (Gia_ObjIsRi(p, pObj))     fprintf(fp, "\"ri\",");
+        if (Gia_ObjIsRo(p, pObj))     fprintf(fp, "\"ro\",");
+        if (Gia_ObjIsAnd(pObj))       fprintf(fp, "\"and\",");
+        if (Gia_ObjIsXor(pObj))       fprintf(fp, "\"xor\",");
+        if (Gia_ObjIsMux(p, pObj))    fprintf(fp, "\"mux\",");
+        if (Gia_ObjIsAndReal(p, pObj))fprintf(fp, "\"and_real\",");
+        if (Gia_ObjIsBuf(pObj))       fprintf(fp, "\"buf\",");
+        if (Gia_ObjIsAndNotBuf(pObj)) fprintf(fp, "\"and_not_buf\",");
+        if (Gia_ObjIsCand(pObj))      fprintf(fp, "\"cand\",");
+        if (Gia_ObjIsConst0(pObj))    fprintf(fp, "\"const0\",");
+
+        // FIXME: remove the last comma. may not work on all OSes
+        fseek(fp, -1, SEEK_CUR);
+
+        fprintf(fp, "],\n");
+    }
+
+    // FIXME: remove the last comma. may not work on all OSes
+    fseek(fp, -2, SEEK_CUR);
+    fprintf(fp, "\n");
+
+    fprintf(fp, "  ],\n");
+
+    // Edges
+    fprintf(fp, " \"edges\": [\n");
+    for (int i=0; i<p->nObjs; ++i) {
+        pObj = &p->pObjs[i];
+
+        int fanin = Gia_ObjFaninNum(p, pObj);
+
+        if (fanin >= 1 && Gia_ObjDiff0(pObj) != GIA_NONE) {
+            Gia_Obj_t* o = Gia_ObjFanin0(pObj);
+            int inv = !(Gia_ObjFaninLit0p(p, pObj) & 1);
+            fprintf(fp, "    [%d, %d, %d],\n", Gia_ObjId(p, o), Gia_ObjId(p, pObj), inv);
+        }
+        if (fanin >= 2 && Gia_ObjDiff1(pObj) != GIA_NONE) {
+            Gia_Obj_t* o = Gia_ObjFanin1(pObj);
+            int inv = !(Gia_ObjFaninLit1p(p, pObj) & 1);
+            fprintf(fp, "    [%d, %d, %d],\n", Gia_ObjId(p, o), Gia_ObjId(p, pObj), inv);
+        }
+
+        Gia_Obj_t* o = Gia_ObjFanin2(p, pObj);
+        if (fanin >= 3 && o != NULL) {
+            int inv = !(Gia_ObjFaninLit2p(p, pObj) & 1);
+            fprintf(fp, "    [%d, %d, %d],\n", Gia_ObjId(p, o), Gia_ObjId(p, pObj), inv);
+        }
+    }
+
+    // FIXME: remove the last comma. may not work on all OSes
+    fseek(fp, -2, SEEK_CUR);
+    fprintf(fp, "\n");
+
+    fprintf(fp, "  ]\n");
+
+    fprintf(fp, "}\n");
+    fclose(fp);
+
+    // ==============================================================
+
     if ( p != pInit )
     {
         Gia_ManTransferTiming( pInit, p );
