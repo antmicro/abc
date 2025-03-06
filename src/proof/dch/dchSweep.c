@@ -92,6 +92,16 @@ void Dch_ManSweepNode( Dch_Man_t * p, Aig_Obj_t * pObj )
     assert( Aig_ObjRepr( p->pAigTotal, pObj ) != pObjRepr );
 }
 
+int* pLayers;
+int CmpNodes(const void * p1, const void * p2)
+{
+    const Aig_Obj_t * pObj1 = *(const Aig_Obj_t**)p1;
+    const Aig_Obj_t * pObj2 = *(const Aig_Obj_t**)p2;
+    if (!pObj1) return 1;
+    if (!pObj2) return -1;
+    return pLayers[pObj1->Id] - pLayers[pObj2->Id];
+}
+
 /**Function*************************************************************
 
   Synopsis    [Performs fraiging for the internal nodes.]
@@ -116,18 +126,67 @@ void Dch_ManSweep( Dch_Man_t * p )
         pObj->pData = Aig_ObjCreateCi( p->pAigFraig );
     // sweep internal nodes
     pProgress = Bar_ProgressStart( stdout, Aig_ManObjNumMax(p->pAigTotal) );
+
+    pLayers = ABC_CALLOC(int, Aig_ManObjNumMax(p->pAigTotal));
+    Aig_Obj_t ** pLayeredObjs = ABC_CALLOC(Aig_Obj_t*, Aig_ManObjNumMax(p->pAigTotal));
     Aig_ManForEachNode( p->pAigTotal, pObj, i )
     {
-        Bar_ProgressUpdate( pProgress, i, NULL );
-        if ( Dch_ObjFraig(Aig_ObjFanin0(pObj)) == NULL || 
-             Dch_ObjFraig(Aig_ObjFanin1(pObj)) == NULL )
+        pLayeredObjs[i] = pObj;
+        if (Aig_ObjFanin0(pObj) == NULL || Aig_ObjFanin1(pObj) == NULL) {
             continue;
-        pObjNew = Aig_And( p->pAigFraig, Dch_ObjChild0Fra(pObj), Dch_ObjChild1Fra(pObj) );
-        if ( pObjNew == NULL )
-            continue;
-        Dch_ObjSetFraig( pObj, pObjNew );
-        Dch_ManSweepNode( p, pObj );
+        }
+        Aig_Obj_t * pFanin0 = Aig_ObjFanin0(pObj);
+        Aig_Obj_t * pFanin1 = Aig_ObjFanin1(pObj);
+        pLayers[pObj->Id] = Abc_MaxInt(pLayers[pFanin0->Id], pLayers[pFanin1->Id]) + 1;
     }
+
+    qsort(pLayeredObjs, Aig_ManObjNum(p->pAigTotal), sizeof(Aig_Obj_t*), CmpNodes);
+
+    Vec_Int_t * vLayers = Vec_IntAlloc(100);
+    Vec_IntPush(vLayers, 0);
+    int LastLayer = 0;
+    for (int i = 0; i < Aig_ManObjNumMax(p->pAigTotal); i++)
+    {
+        Aig_Obj_t * pObj = pLayeredObjs[i];
+        if (!pObj || !Aig_ObjIsNode(pObj)) continue;
+        int Layer = pLayers[pObj->Id];
+        if (Layer > LastLayer) {
+            LastLayer = Layer;
+            Vec_IntPush(vLayers, i);
+        }
+    }
+
+    int j, LayerStart;
+    Vec_IntForEachEntry( vLayers, LayerStart, j )
+    {
+        int LayerEnd = Aig_ManObjNumMax(p->pAigTotal);
+        if (j + 1 < Vec_IntSize(vLayers))
+            LayerEnd = Vec_IntEntry(vLayers, j + 1);
+        for (int i = LayerStart; i < LayerEnd; i++)
+        {
+            Aig_Obj_t * pObj = pLayeredObjs[i];
+            if ( (pObj) == NULL || !Aig_ObjIsNode(pObj) ) continue;
+            Bar_ProgressUpdate( pProgress, i, NULL );
+            if ( Dch_ObjFraig(Aig_ObjFanin0(pObj)) == NULL ||
+                 Dch_ObjFraig(Aig_ObjFanin1(pObj)) == NULL )
+                continue;
+            pObjNew = Aig_And( p->pAigFraig, Dch_ObjChild0Fra(pObj), Dch_ObjChild1Fra(pObj) );
+            if ( pObjNew == NULL )
+                continue;
+            Dch_ObjSetFraig( pObj, pObjNew );
+        }
+        for (int i = LayerStart; i < LayerEnd; i++)
+        {
+            Aig_Obj_t * pObj = pLayeredObjs[i];
+            if ( (pObj) == NULL || !Aig_ObjIsNode(pObj) ) continue;
+            Dch_ManSweepNode( p, pObj );
+        }
+    }
+
+    Vec_IntFree(vLayers);
+    ABC_FREE(pLayers);
+    ABC_FREE(pLayeredObjs);
+
     Bar_ProgressStop( pProgress );
     // update the representatives of the nodes (makes classes invalid)
     ABC_FREE( p->pAigTotal->pReprs );
