@@ -20,7 +20,7 @@
 #include <stdint.h>
 #include "dchInt.h"
 #include "misc/bar/bar.h"
-#define NUM_THREADS 2
+#define NUM_THREADS 8
 
 ABC_NAMESPACE_IMPL_START
 
@@ -196,11 +196,14 @@ void Dch_ManSweep( Dch_Man_t * p )
             Dch_ObjSetFraig( pObj, pObjNew );
         }
 
+        int LayerLen = LayerEnd - LayerStart;
+        int SubLayerLen = (LayerLen + NUM_THREADS - 1) / NUM_THREADS;
         for (int j = LayerStart; j < LayerEnd; j++)
         {
             Aig_Obj_t * pObj = pLayeredObjs[j];
             if (!pObj || !Aig_ObjIsNode(pObj)) continue;
-            Dch_ManSweepNode( &pSimSat[0], pObj );
+            int k = (j - LayerStart) / SubLayerLen;
+            Dch_ManSweepNode( &pSimSat[k], pObj );
         }
 
         for (int j = 0; j < NUM_THREADS; j++)
