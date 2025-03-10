@@ -157,31 +157,30 @@ void Dch_ManSweep( Dch_Man_t * p )
         }
     }
 
-    Dch_SimSat_t * pSimSat = ABC_CALLOC(Dch_SimSat_t, NUM_THREADS);
+    Dch_SimSat_t * pSimSats = ABC_CALLOC(Dch_SimSat_t, NUM_THREADS);
     for (int j = 0; j < NUM_THREADS; j++) {
-        pSimSat[j].pAigTotal = p->pAigTotal;
-        pSimSat[j].pAigFraig = p->pAigFraig;
-        pSimSat[j].pPars = p->pPars;
-        pSimSat[j].ppClasses = p->ppClasses;
-        pSimSat[j].vFanins = p->vFanins;
+        pSimSats[j].pAigTotal = p->pAigTotal;
+        pSimSats[j].pAigFraig = p->pAigFraig;
+        pSimSats[j].pPars = p->pPars;
+        pSimSats[j].ppClasses = p->ppClasses;
+        pSimSats[j].vFanins = p->vFanins;
 
-        pSimSat[j].nSatVars = 1;
-        pSimSat[j].pSatVars = ABC_CALLOC(int, Aig_ManObjNumMax(p->pAigTotal));
-        pSimSat[j].vSimRoots    = Vec_PtrAlloc( 1000 );
-        pSimSat[j].vSimClasses  = Vec_PtrAlloc( 1000 );
-        pSimSat[j].vUsedNodes   = Vec_PtrAlloc( 1000 );
-        pSimSat[j].pReprsProved = ABC_CALLOC( Aig_Obj_t *, Aig_ManObjNumMax(p->pAigTotal) );
+        pSimSats[j].nSatVars = 1;
+        pSimSats[j].pSatVars = ABC_CALLOC(int, Aig_ManObjNumMax(p->pAigTotal));
+        pSimSats[j].vSimRoots    = Vec_PtrAlloc( 1000 );
+        pSimSats[j].vSimClasses  = Vec_PtrAlloc( 1000 );
+        pSimSats[j].vUsedNodes   = Vec_PtrAlloc( 1000 );
+        pSimSats[j].pReprsProved = ABC_CALLOC( Aig_Obj_t *, Aig_ManObjNumMax(p->pAigTotal) );
     }
 
     int LayerStart;
     Vec_IntForEachEntry( vLayers, LayerStart, i )
     {
-        for (int j = 0; j < NUM_THREADS; j++)
-            memset(pSimSat[j].pReprsProved, 0, sizeof(Aig_Obj_t *) * Aig_ManObjNumMax(p->pAigTotal));
-
         int LayerEnd = Aig_ManObjNumMax(p->pAigTotal);
         if (i + 1 < Vec_IntSize(vLayers))
             LayerEnd = Vec_IntEntry(vLayers, i + 1);
+        int LayerLen = LayerEnd - LayerStart;
+
         for (int j = LayerStart; j < LayerEnd; j++)
         {
             Aig_Obj_t * pObj = pLayeredObjs[j];
@@ -196,20 +195,25 @@ void Dch_ManSweep( Dch_Man_t * p )
             Dch_ObjSetFraig( pObj, pObjNew );
         }
 
-        int LayerLen = LayerEnd - LayerStart;
         int SubLayerLen = (LayerLen + NUM_THREADS - 1) / NUM_THREADS;
-        for (int j = LayerStart; j < LayerEnd; j++)
-        {
-            Aig_Obj_t * pObj = pLayeredObjs[j];
-            if (!pObj || !Aig_ObjIsNode(pObj)) continue;
-            int k = (j - LayerStart) / SubLayerLen;
-            Dch_ManSweepNode( &pSimSat[k], pObj );
-        }
+        for (int j = 0; j < NUM_THREADS; j++) {
+            Dch_SimSat_t * pSimSat = &pSimSats[j];
+            memset(pSimSat->pReprsProved, 0, sizeof(Aig_Obj_t *) * Aig_ManObjNumMax(p->pAigTotal));
 
-        for (int j = 0; j < NUM_THREADS; j++)
+            int Start = LayerStart + j * SubLayerLen;
+            int End = Start + SubLayerLen;
+            if (End > LayerEnd) End = LayerEnd;
+            for (int k = Start; k < End; k++)
+            {
+                Aig_Obj_t * pObj = pLayeredObjs[k];
+                if (!pObj || !Aig_ObjIsNode(pObj)) continue;
+                Dch_ManSweepNode( pSimSat, pObj );
+            }
+
             for (int k = 0; k < Aig_ManObjNumMax(p->pAigTotal); k++)
-                if (pSimSat[j].pReprsProved[k])
-                    pReprsProved[k] = pSimSat[j].pReprsProved[k];
+                if (pSimSat->pReprsProved[k])
+                    pReprsProved[k] = pSimSat->pReprsProved[k];
+        }
     }
 
     Vec_IntFree(vLayers);
@@ -217,15 +221,15 @@ void Dch_ManSweep( Dch_Man_t * p )
     ABC_FREE(pLayeredObjs);
 
     for (int j = 0; j < NUM_THREADS; j++) {
-        if (pSimSat[j].pSat) sat_solver_delete( pSimSat[j].pSat );
-        ABC_FREE(pSimSat[j].pSatVars);
-        Vec_PtrFree(pSimSat[j].vSimRoots);
-        Vec_PtrFree(pSimSat[j].vSimClasses);
-        Vec_PtrFree(pSimSat[j].vUsedNodes);
-        p->nSatVars += pSimSat[j].nSatVars;
-        ABC_FREE(pSimSat[j].pReprsProved);
+        if (pSimSats[j].pSat) sat_solver_delete( pSimSats[j].pSat );
+        ABC_FREE(pSimSats[j].pSatVars);
+        Vec_PtrFree(pSimSats[j].vSimRoots);
+        Vec_PtrFree(pSimSats[j].vSimClasses);
+        Vec_PtrFree(pSimSats[j].vUsedNodes);
+        p->nSatVars += pSimSats[j].nSatVars;
+        ABC_FREE(pSimSats[j].pReprsProved);
     }
-    ABC_FREE(pSimSat);
+    ABC_FREE(pSimSats);
 
     Bar_ProgressStop( pProgress );
     // update the representatives of the nodes (makes classes invalid)
