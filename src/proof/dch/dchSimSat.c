@@ -42,7 +42,7 @@ ABC_NAMESPACE_IMPL_START
   SeeAlso     []
 
 ***********************************************************************/
-void Dch_ManCollectTfoCands_rec( Dch_Man_t * p, Aig_Obj_t * pObj )
+void Dch_ManCollectTfoCands_rec( Dch_SimSat_t * p, Aig_Obj_t * pObj )
 {
     Aig_Obj_t * pFanout, * pRepr;
     int iFanout = -1, i;
@@ -81,7 +81,7 @@ void Dch_ManCollectTfoCands_rec( Dch_Man_t * p, Aig_Obj_t * pObj )
   SeeAlso     []
  
 ***********************************************************************/
-void Dch_ManCollectTfoCands( Dch_Man_t * p, Aig_Obj_t * pObj1, Aig_Obj_t * pObj2 )
+void Dch_ManCollectTfoCands( Dch_SimSat_t * p, Aig_Obj_t * pObj1, Aig_Obj_t * pObj2 )
 {
     Aig_Obj_t * pObj;
     int i;
@@ -108,7 +108,7 @@ void Dch_ManCollectTfoCands( Dch_Man_t * p, Aig_Obj_t * pObj1, Aig_Obj_t * pObj2
   SeeAlso     []
  
 ***********************************************************************/
-void Dch_ManResimulateSolved_rec( Dch_Man_t * p, Aig_Obj_t * pObj )
+void Dch_ManResimulateSolved_rec( Dch_SimSat_t * p, Aig_Obj_t * pObj )
 {
     if ( Aig_ObjIsTravIdCurrent(p->pAigTotal, pObj) )
         return;
@@ -146,7 +146,7 @@ void Dch_ManResimulateSolved_rec( Dch_Man_t * p, Aig_Obj_t * pObj )
   SeeAlso     []
 
 ***********************************************************************/
-void Dch_ManResimulateOther_rec( Dch_Man_t * p, Aig_Obj_t * pObj )
+void Dch_ManResimulateOther_rec( Dch_SimSat_t * p, Aig_Obj_t * pObj )
 {
     if ( Aig_ObjIsTravIdCurrent(p->pAigTotal, pObj) )
         return;
@@ -174,7 +174,7 @@ void Dch_ManResimulateOther_rec( Dch_Man_t * p, Aig_Obj_t * pObj )
   SeeAlso     []
 
 ***********************************************************************/
-void Dch_ManResimulateCex( Dch_Man_t * p, Aig_Obj_t * pObj, Aig_Obj_t * pRepr )
+void Dch_ManResimulateCex( Dch_SimSat_t * p, Aig_Obj_t * pObj, Aig_Obj_t * pRepr )
 {
     Aig_Obj_t * pRoot, ** ppClass;
     int i, k, nSize, RetValue1, RetValue2;
@@ -222,7 +222,7 @@ p->timeSimSat += Abc_Clock() - clk;
   SeeAlso     []
 
 ***********************************************************************/
-void Dch_ManResimulateCex2( Dch_Man_t * p, Aig_Obj_t * pObj, Aig_Obj_t * pRepr )
+void Dch_ManResimulateCex2( Dch_SimSat_t * p, Aig_Obj_t * pObj, Aig_Obj_t * pRepr )
 {
     Aig_Obj_t * pRoot;
     int i, RetValue;

@@ -9,7 +9,7 @@
   Synopsis    [One round of SAT sweeping.]
 
   Author      [Alan Mishchenko]
-  
+
   Affiliation [UC Berkeley]
 
   Date        [Ver. 1.0. Started - June 29, 2008.]
@@ -17,7 +17,7 @@
   Revision    [$Id: dchSweep.c,v 1.00 2008/07/29 00:00:00 alanmi Exp $]
 
 ***********************************************************************/
-
+#include <stdint.h>
 #include "dchInt.h"
 #include "misc/bar/bar.h"
 
@@ -40,14 +40,14 @@ static inline Aig_Obj_t * Dch_ObjChild1Fra( Aig_Obj_t * pObj ) { assert( !Aig_Is
   Synopsis    [Performs fraiging for one node.]
 
   Description [Returns the fraiged node.]
-               
+
   SideEffects []
 
   SeeAlso     []
 
 ***********************************************************************/
-void Dch_ManSweepNode( Dch_Man_t * p, Aig_Obj_t * pObj )
-{ 
+void Dch_ManSweepNode( Dch_SimSat_t * p, Aig_Obj_t * pObj )
+{
     Aig_Obj_t * pObjRepr, * pObjFraig, * pObjFraig2, * pObjReprFraig;
     int RetValue;
     // get representative of this class
@@ -107,7 +107,7 @@ int CmpNodes(const void * p1, const void * p2)
   Synopsis    [Performs fraiging for the internal nodes.]
 
   Description []
-               
+
   SideEffects []
 
   SeeAlso     []
@@ -127,6 +127,7 @@ void Dch_ManSweep( Dch_Man_t * p )
     // sweep internal nodes
     pProgress = Bar_ProgressStart( stdout, Aig_ManObjNumMax(p->pAigTotal) );
 
+    Aig_Obj_t ** pReprsProved = ABC_CALLOC(Aig_Obj_t*, Aig_ManObjNumMax(p->pAigTotal));
     pLayers = ABC_CALLOC(int, Aig_ManObjNumMax(p->pAigTotal));
     Aig_Obj_t ** pLayeredObjs = ABC_CALLOC(Aig_Obj_t*, Aig_ManObjNumMax(p->pAigTotal));
     Aig_ManForEachNode( p->pAigTotal, pObj, i )
@@ -139,7 +140,6 @@ void Dch_ManSweep( Dch_Man_t * p )
         Aig_Obj_t * pFanin1 = Aig_ObjFanin1(pObj);
         pLayers[pObj->Id] = Abc_MaxInt(pLayers[pFanin0->Id], pLayers[pFanin1->Id]) + 1;
     }
-
     qsort(pLayeredObjs, Aig_ManObjNum(p->pAigTotal), sizeof(Aig_Obj_t*), CmpNodes);
 
     Vec_Int_t * vLayers = Vec_IntAlloc(100);
@@ -156,17 +156,17 @@ void Dch_ManSweep( Dch_Man_t * p )
         }
     }
 
-    int j, LayerStart;
-    Vec_IntForEachEntry( vLayers, LayerStart, j )
+    int LayerStart;
+    Vec_IntForEachEntry( vLayers, LayerStart, i )
     {
         int LayerEnd = Aig_ManObjNumMax(p->pAigTotal);
-        if (j + 1 < Vec_IntSize(vLayers))
-            LayerEnd = Vec_IntEntry(vLayers, j + 1);
-        for (int i = LayerStart; i < LayerEnd; i++)
+        if (i + 1 < Vec_IntSize(vLayers))
+            LayerEnd = Vec_IntEntry(vLayers, i + 1);
+        for (int j = LayerStart; j < LayerEnd; j++)
         {
-            Aig_Obj_t * pObj = pLayeredObjs[i];
-            if ( (pObj) == NULL || !Aig_ObjIsNode(pObj) ) continue;
-            Bar_ProgressUpdate( pProgress, i, NULL );
+            Aig_Obj_t * pObj = pLayeredObjs[j];
+            if (!pObj || !Aig_ObjIsNode(pObj)) continue;
+            Bar_ProgressUpdate( pProgress, j, NULL );
             if ( Dch_ObjFraig(Aig_ObjFanin0(pObj)) == NULL ||
                  Dch_ObjFraig(Aig_ObjFanin1(pObj)) == NULL )
                 continue;
@@ -175,12 +175,38 @@ void Dch_ManSweep( Dch_Man_t * p )
                 continue;
             Dch_ObjSetFraig( pObj, pObjNew );
         }
-        for (int i = LayerStart; i < LayerEnd; i++)
+
+        Dch_SimSat_t* pSimSat = ABC_CALLOC(Dch_SimSat_t, 1);
+        pSimSat->pAigTotal = p->pAigTotal;
+        pSimSat->pAigFraig = p->pAigFraig;
+        pSimSat->pPars = p->pPars;
+        pSimSat->ppClasses = p->ppClasses;
+        pSimSat->vFanins = p->vFanins;
+
+        pSimSat->nSatVars = 1;
+        pSimSat->pSatVars = ABC_CALLOC(int, Aig_ManObjNumMax(p->pAigTotal));
+        pSimSat->vSimRoots    = Vec_PtrAlloc( 1000 );
+        pSimSat->vSimClasses  = Vec_PtrAlloc( 1000 );
+        pSimSat->vUsedNodes   = Vec_PtrAlloc( 1000 );
+        pSimSat->pReprsProved = ABC_CALLOC( Aig_Obj_t *, Aig_ManObjNumMax(p->pAigTotal) );
+        memcpy(pSimSat->pReprsProved, pReprsProved, sizeof(Aig_Obj_t *) * Aig_ManObjNumMax(p->pAigTotal));
+
+        for (int j = LayerStart; j < LayerEnd; j++)
         {
-            Aig_Obj_t * pObj = pLayeredObjs[i];
-            if ( (pObj) == NULL || !Aig_ObjIsNode(pObj) ) continue;
-            Dch_ManSweepNode( p, pObj );
+            Aig_Obj_t * pObj = pLayeredObjs[j];
+            if (!pObj || !Aig_ObjIsNode(pObj)) continue;
+            Dch_ManSweepNode( pSimSat, pObj );
         }
+
+        if (pSimSat->pSat) sat_solver_delete( pSimSat->pSat );
+        ABC_FREE(pSimSat->pSatVars);
+        Vec_PtrFree(pSimSat->vSimRoots);
+        Vec_PtrFree(pSimSat->vSimClasses);
+        Vec_PtrFree(pSimSat->vUsedNodes);
+        p->nSatVars = pSimSat->nSatVars;
+        memcpy(pReprsProved, pSimSat->pReprsProved, sizeof(Aig_Obj_t *) * Aig_ManObjNumMax(p->pAigTotal));
+        ABC_FREE(pSimSat->pReprsProved);
+        ABC_FREE(pSimSat);
     }
 
     Vec_IntFree(vLayers);
@@ -190,8 +216,7 @@ void Dch_ManSweep( Dch_Man_t * p )
     Bar_ProgressStop( pProgress );
     // update the representatives of the nodes (makes classes invalid)
     ABC_FREE( p->pAigTotal->pReprs );
-    p->pAigTotal->pReprs = p->pReprsProved;
-    p->pReprsProved = NULL;
+    p->pAigTotal->pReprs = pReprsProved;
     // clean the mark
     Aig_ManCleanMarkB( p->pAigTotal );
 }

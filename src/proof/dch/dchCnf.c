@@ -42,7 +42,7 @@ ABC_NAMESPACE_IMPL_START
   SeeAlso     []
 
 ***********************************************************************/
-void Dch_AddClausesMux( Dch_Man_t * p, Aig_Obj_t * pNode )
+void Dch_AddClausesMux( Dch_SimSat_t * p, Aig_Obj_t * pNode )
 {
     Aig_Obj_t * pNodeI, * pNodeT, * pNodeE;
     int pLits[4], RetValue, VarF, VarI, VarT, VarE, fCompT, fCompE;
@@ -161,7 +161,7 @@ void Dch_AddClausesMux( Dch_Man_t * p, Aig_Obj_t * pNode )
   SeeAlso     []
 
 ***********************************************************************/
-void Dch_AddClausesSuper( Dch_Man_t * p, Aig_Obj_t * pNode, Vec_Ptr_t * vSuper )
+void Dch_AddClausesSuper( Dch_SimSat_t * p, Aig_Obj_t * pNode, Vec_Ptr_t * vSuper )
 {
     Aig_Obj_t * pFanin;
     int * pLits, nLits, RetValue, i;
@@ -259,7 +259,7 @@ void Dch_CollectSuper( Aig_Obj_t * pObj, int fUseMuxes, Vec_Ptr_t * vSuper )
   SeeAlso     []
 
 ***********************************************************************/
-void Dch_ObjAddToFrontier( Dch_Man_t * p, Aig_Obj_t * pObj, Vec_Ptr_t * vFrontier )
+void Dch_ObjAddToFrontier( Dch_SimSat_t * p, Aig_Obj_t * pObj, Vec_Ptr_t * vFrontier )
 {
     assert( !Aig_IsComplement(pObj) );
     if ( Dch_ObjSatNum(p,pObj) )
@@ -284,7 +284,7 @@ void Dch_ObjAddToFrontier( Dch_Man_t * p, Aig_Obj_t * pObj, Vec_Ptr_t * vFrontie
   SeeAlso     []
 
 ***********************************************************************/
-void Dch_CnfNodeAddToSolver( Dch_Man_t * p, Aig_Obj_t * pObj )
+void Dch_CnfNodeAddToSolver( Dch_SimSat_t * p, Aig_Obj_t * pObj )
 { 
     Vec_Ptr_t * vFrontier;
     Aig_Obj_t * pNode, * pFanin;

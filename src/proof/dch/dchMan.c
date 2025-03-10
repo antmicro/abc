@@ -52,14 +52,7 @@ Dch_Man_t * Dch_ManCreate( Aig_Man_t * pAig, Dch_Pars_t * pPars )
     p->pAigTotal    = pAig; //Dch_DeriveTotalAig( vAigs );
     Aig_ManFanoutStart( p->pAigTotal );
     // SAT solving
-    p->nSatVars     = 1;
-    p->pSatVars     = ABC_CALLOC( int, Aig_ManObjNumMax(p->pAigTotal) );
-    p->vUsedNodes   = Vec_PtrAlloc( 1000 );
     p->vFanins      = Vec_PtrAlloc( 100 );
-    p->vSimRoots    = Vec_PtrAlloc( 1000 );
-    p->vSimClasses  = Vec_PtrAlloc( 1000 );
-    // equivalences proved
-    p->pReprsProved = ABC_CALLOC( Aig_Obj_t *, Aig_ManObjNumMax(p->pAigTotal) );
     return p;
 }
 
@@ -128,14 +121,7 @@ void Dch_ManStop( Dch_Man_t * p )
         Aig_ManStop( p->pAigFraig );
     if ( p->ppClasses )
         Dch_ClassesStop( p->ppClasses );
-    if ( p->pSat )
-        sat_solver_delete( p->pSat );
-    Vec_PtrFree( p->vUsedNodes );
     Vec_PtrFree( p->vFanins );
-    Vec_PtrFree( p->vSimRoots );
-    Vec_PtrFree( p->vSimClasses );
-    ABC_FREE( p->pReprsProved );
-    ABC_FREE( p->pSatVars );
     ABC_FREE( p );
 }
 
@@ -150,7 +136,7 @@ void Dch_ManStop( Dch_Man_t * p )
   SeeAlso     []
 
 ***********************************************************************/
-void Dch_ManSatSolverRecycle( Dch_Man_t * p )
+void Dch_ManSatSolverRecycle( Dch_SimSat_t * p )
 {
     int Lit;
     if ( p->pSat )
