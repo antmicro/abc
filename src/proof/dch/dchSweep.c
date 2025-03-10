@@ -176,6 +176,9 @@ void Dch_ManSweep( Dch_Man_t * p )
     int LayerStart;
     Vec_IntForEachEntry( vLayers, LayerStart, i )
     {
+        for (int j = 0; j < NUM_THREADS; j++)
+            memset(pSimSat[j].pReprsProved, 0, sizeof(Aig_Obj_t *) * Aig_ManObjNumMax(p->pAigTotal));
+
         int LayerEnd = Aig_ManObjNumMax(p->pAigTotal);
         if (i + 1 < Vec_IntSize(vLayers))
             LayerEnd = Vec_IntEntry(vLayers, i + 1);
@@ -200,6 +203,10 @@ void Dch_ManSweep( Dch_Man_t * p )
             Dch_ManSweepNode( &pSimSat[0], pObj );
         }
 
+        for (int j = 0; j < NUM_THREADS; j++)
+            for (int k = 0; k < Aig_ManObjNumMax(p->pAigTotal); k++)
+                if (pSimSat[j].pReprsProved[k])
+                    pReprsProved[k] = pSimSat[j].pReprsProved[k];
     }
 
     Vec_IntFree(vLayers);
