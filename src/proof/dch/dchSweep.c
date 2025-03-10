@@ -191,6 +191,7 @@ void Dch_ManSweep( Dch_Man_t * p )
         pSimSats[j].ppClasses = p->ppClasses;
         pSimSats[j].vFanins = p->vFanins;
 
+        pSimSats[j].pTravIds = ABC_CALLOC(int, Aig_ManObjNumMax(p->pAigTotal));
         pSimSats[j].nSatVars = 1;
         pSimSats[j].pSatVars = ABC_CALLOC(int, Aig_ManObjNumMax(p->pAigTotal));
         pSimSats[j].vSimRoots    = Vec_PtrAlloc( 1000 );
@@ -247,6 +248,7 @@ void Dch_ManSweep( Dch_Man_t * p )
 
     for (int j = 0; j < NUM_THREADS; j++) {
         if (pSimSats[j].pSat) sat_solver_delete( pSimSats[j].pSat );
+        ABC_FREE(pSimSats[j].pTravIds);
         ABC_FREE(pSimSats[j].pSatVars);
         Vec_PtrFree(pSimSats[j].vSimRoots);
         Vec_PtrFree(pSimSats[j].vSimClasses);

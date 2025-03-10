@@ -31,6 +31,20 @@ ABC_NAMESPACE_IMPL_START
 ///                     FUNCTION DEFINITIONS                         ///
 ////////////////////////////////////////////////////////////////////////
 
+int Dch_SimSatObjIsTravIdCurrent( Dch_SimSat_t * p, Aig_Obj_t * pObj )
+{
+    return p->pTravIds[pObj->Id] == p->nTravId;
+}
+
+void Dch_SimSatObjSetTravIdCurrent( Dch_SimSat_t * p, Aig_Obj_t * pObj )
+{
+    p->pTravIds[pObj->Id] = p->nTravId;
+}
+
+void Dch_SimSatIncrementTravId( Dch_SimSat_t * p ) {
+    p->nTravId++;
+}
+
 /**Function*************************************************************
 
   Synopsis    [Collects internal nodes in the reverse DFS order.]
@@ -47,9 +61,9 @@ void Dch_ManCollectTfoCands_rec( Dch_SimSat_t * p, Aig_Obj_t * pObj )
     Aig_Obj_t * pFanout, * pRepr;
     int iFanout = -1, i;
     assert( !Aig_IsComplement(pObj) );
-    if ( Aig_ObjIsTravIdCurrent(p->pAigTotal, pObj) )
+    if ( Dch_SimSatObjIsTravIdCurrent(p, pObj) )
         return;
-    Aig_ObjSetTravIdCurrent(p->pAigTotal, pObj);
+    Dch_SimSatObjSetTravIdCurrent(p, pObj);
     // traverse the fanouts
     Aig_ObjForEachFanout( p->pAigTotal, pObj, pFanout, iFanout, i )
         Dch_ManCollectTfoCands_rec( p, pFanout );
@@ -87,8 +101,8 @@ void Dch_ManCollectTfoCands( Dch_SimSat_t * p, Aig_Obj_t * pObj1, Aig_Obj_t * pO
     int i;
     Vec_PtrClear( p->vSimRoots );
     Vec_PtrClear( p->vSimClasses );
-    Aig_ManIncrementTravId( p->pAigTotal );
-    Aig_ObjSetTravIdCurrent( p->pAigTotal, Aig_ManConst1(p->pAigTotal) );    
+    Dch_SimSatIncrementTravId( p );
+    Dch_SimSatObjSetTravIdCurrent( p, Aig_ManConst1(p->pAigTotal) );
     Dch_ManCollectTfoCands_rec( p, pObj1 );
     Dch_ManCollectTfoCands_rec( p, pObj2 );
     Vec_PtrSort( p->vSimRoots, (int (*)(const void *, const void *))Aig_ObjCompareIdIncrease );
@@ -110,9 +124,9 @@ void Dch_ManCollectTfoCands( Dch_SimSat_t * p, Aig_Obj_t * pObj1, Aig_Obj_t * pO
 ***********************************************************************/
 void Dch_ManResimulateSolved_rec( Dch_SimSat_t * p, Aig_Obj_t * pObj )
 {
-    if ( Aig_ObjIsTravIdCurrent(p->pAigTotal, pObj) )
+    if ( Dch_SimSatObjIsTravIdCurrent(p, pObj) )
         return;
-    Aig_ObjSetTravIdCurrent(p->pAigTotal, pObj);
+    Dch_SimSatObjSetTravIdCurrent(p, pObj);
     if ( Aig_ObjIsCi(pObj) )
     {
         Aig_Obj_t * pObjFraig;
@@ -148,9 +162,9 @@ void Dch_ManResimulateSolved_rec( Dch_SimSat_t * p, Aig_Obj_t * pObj )
 ***********************************************************************/
 void Dch_ManResimulateOther_rec( Dch_SimSat_t * p, Aig_Obj_t * pObj )
 {
-    if ( Aig_ObjIsTravIdCurrent(p->pAigTotal, pObj) )
+    if ( Dch_SimSatObjIsTravIdCurrent(p, pObj) )
         return;
-    Aig_ObjSetTravIdCurrent(p->pAigTotal, pObj);
+    Dch_SimSatObjSetTravIdCurrent(p, pObj);
     if ( Aig_ObjIsCi(pObj) )
     {
         // set random value
@@ -183,8 +197,8 @@ void Dch_ManResimulateCex( Dch_SimSat_t * p, Aig_Obj_t * pObj, Aig_Obj_t * pRepr
     Dch_ManCollectTfoCands( p, pObj, pRepr );
     // resimulate the cone of influence of the solved nodes
     p->nConeThis = 0;
-    Aig_ManIncrementTravId( p->pAigTotal );
-    Aig_ObjSetTravIdCurrent( p->pAigTotal, Aig_ManConst1(p->pAigTotal) );
+    Dch_SimSatIncrementTravId( p );
+    Dch_SimSatObjSetTravIdCurrent( p, Aig_ManConst1(p->pAigTotal) );
     Dch_ManResimulateSolved_rec( p, pObj );
     Dch_ManResimulateSolved_rec( p, pRepr );
     p->nConeMax = Abc_MaxInt( p->nConeMax, p->nConeThis );
@@ -234,8 +248,8 @@ void Dch_ManResimulateCex2( Dch_SimSat_t * p, Aig_Obj_t * pObj, Aig_Obj_t * pRep
         Dch_ClassesCollectOneClass( p->ppClasses, pRepr, p->vSimRoots );
     // resimulate the cone of influence of the solved nodes
     p->nConeThis = 0;
-    Aig_ManIncrementTravId( p->pAigTotal );
-    Aig_ObjSetTravIdCurrent( p->pAigTotal, Aig_ManConst1(p->pAigTotal) );
+    Dch_SimSatIncrementTravId( p );
+    Dch_SimSatObjSetTravIdCurrent( p, Aig_ManConst1(p->pAigTotal) );
     Dch_ManResimulateSolved_rec( p, pObj );
     Dch_ManResimulateSolved_rec( p, pRepr );
     p->nConeMax = Abc_MaxInt( p->nConeMax, p->nConeThis );

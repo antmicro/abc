@@ -50,6 +50,9 @@ typedef struct Dch_Cla_t_ Dch_Cla_t;
 typedef struct Dch_SimSat_t_ Dch_SimSat_t;
 struct Dch_SimSat_t_
 {
+    // node fields for multithreading
+    int              nTravId;        // the current traversal ID
+    int *            pTravIds;       // traversal ID vector
     // parameters
     Dch_Pars_t *     pPars;          // choicing parameters
     Aig_Man_t *      pAigTotal;      // intermediate AIG
