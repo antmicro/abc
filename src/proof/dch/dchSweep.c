@@ -93,6 +93,32 @@ void Dch_ManSweepNode( Dch_SimSat_t * p, Aig_Obj_t * pObj )
     assert( Aig_ObjRepr( p->pAigTotal, pObj ) != pObjRepr );
 }
 
+typedef struct ManSweep_ThData_t_
+{
+    Dch_SimSat_t * pSimSat;
+    Aig_Obj_t ** pLayeredObjs;
+    int nStart;
+    int nEnd;
+} ManSweep_ThData_t;
+
+void* ManSweep_WorkerThread(void *pArg)
+{
+    ManSweep_ThData_t *pThData = (ManSweep_ThData_t *)pArg;
+    Dch_SimSat_t * pSimSat = pThData->pSimSat;
+    Aig_Obj_t ** pLayeredObjs = pThData->pLayeredObjs;
+    int Start = pThData->nStart, End = pThData->nEnd;
+
+    memset(pSimSat->pReprsProved, 0, sizeof(Aig_Obj_t *) * Aig_ManObjNumMax(pSimSat->pAigTotal));
+    for (int k = Start; k < End; k++)
+    {
+        Aig_Obj_t * pObj = pLayeredObjs[k];
+        if (!pObj || !Aig_ObjIsNode(pObj)) continue;
+        Dch_ManSweepNode( pSimSat, pObj );
+    }
+    return NULL;
+}
+
+
 int* pLayers;
 int CmpNodes(const void * p1, const void * p2)
 {
@@ -196,23 +222,22 @@ void Dch_ManSweep( Dch_Man_t * p )
         }
 
         int SubLayerLen = (LayerLen + NUM_THREADS - 1) / NUM_THREADS;
+        ManSweep_ThData_t ThData[NUM_THREADS];
         for (int j = 0; j < NUM_THREADS; j++) {
-            Dch_SimSat_t * pSimSat = &pSimSats[j];
-            memset(pSimSat->pReprsProved, 0, sizeof(Aig_Obj_t *) * Aig_ManObjNumMax(p->pAigTotal));
-
             int Start = LayerStart + j * SubLayerLen;
             int End = Start + SubLayerLen;
             if (End > LayerEnd) End = LayerEnd;
-            for (int k = Start; k < End; k++)
-            {
-                Aig_Obj_t * pObj = pLayeredObjs[k];
-                if (!pObj || !Aig_ObjIsNode(pObj)) continue;
-                Dch_ManSweepNode( pSimSat, pObj );
-            }
+            ThData[j].pSimSat = &pSimSats[j];
+            ThData[j].pLayeredObjs = pLayeredObjs;
+            ThData[j].nStart = Start;
+            ThData[j].nEnd = End;
+            ManSweep_WorkerThread(&ThData[j]);
+        }
 
+        for (int j = 0; j < NUM_THREADS; j++) {
             for (int k = 0; k < Aig_ManObjNumMax(p->pAigTotal); k++)
-                if (pSimSat->pReprsProved[k])
-                    pReprsProved[k] = pSimSat->pReprsProved[k];
+                if (pSimSats[j].pReprsProved[k])
+                    pReprsProved[k] = pSimSats[j].pReprsProved[k];
         }
     }
 
