@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include "dchInt.h"
 #include "misc/bar/bar.h"
+#define NUM_THREADS 2
 
 ABC_NAMESPACE_IMPL_START
 
@@ -156,6 +157,22 @@ void Dch_ManSweep( Dch_Man_t * p )
         }
     }
 
+    Dch_SimSat_t * pSimSat = ABC_CALLOC(Dch_SimSat_t, NUM_THREADS);
+    for (int j = 0; j < NUM_THREADS; j++) {
+        pSimSat[j].pAigTotal = p->pAigTotal;
+        pSimSat[j].pAigFraig = p->pAigFraig;
+        pSimSat[j].pPars = p->pPars;
+        pSimSat[j].ppClasses = p->ppClasses;
+        pSimSat[j].vFanins = p->vFanins;
+
+        pSimSat[j].nSatVars = 1;
+        pSimSat[j].pSatVars = ABC_CALLOC(int, Aig_ManObjNumMax(p->pAigTotal));
+        pSimSat[j].vSimRoots    = Vec_PtrAlloc( 1000 );
+        pSimSat[j].vSimClasses  = Vec_PtrAlloc( 1000 );
+        pSimSat[j].vUsedNodes   = Vec_PtrAlloc( 1000 );
+        pSimSat[j].pReprsProved = ABC_CALLOC( Aig_Obj_t *, Aig_ManObjNumMax(p->pAigTotal) );
+    }
+
     int LayerStart;
     Vec_IntForEachEntry( vLayers, LayerStart, i )
     {
@@ -176,42 +193,29 @@ void Dch_ManSweep( Dch_Man_t * p )
             Dch_ObjSetFraig( pObj, pObjNew );
         }
 
-        Dch_SimSat_t* pSimSat = ABC_CALLOC(Dch_SimSat_t, 1);
-        pSimSat->pAigTotal = p->pAigTotal;
-        pSimSat->pAigFraig = p->pAigFraig;
-        pSimSat->pPars = p->pPars;
-        pSimSat->ppClasses = p->ppClasses;
-        pSimSat->vFanins = p->vFanins;
-
-        pSimSat->nSatVars = 1;
-        pSimSat->pSatVars = ABC_CALLOC(int, Aig_ManObjNumMax(p->pAigTotal));
-        pSimSat->vSimRoots    = Vec_PtrAlloc( 1000 );
-        pSimSat->vSimClasses  = Vec_PtrAlloc( 1000 );
-        pSimSat->vUsedNodes   = Vec_PtrAlloc( 1000 );
-        pSimSat->pReprsProved = ABC_CALLOC( Aig_Obj_t *, Aig_ManObjNumMax(p->pAigTotal) );
-        memcpy(pSimSat->pReprsProved, pReprsProved, sizeof(Aig_Obj_t *) * Aig_ManObjNumMax(p->pAigTotal));
-
         for (int j = LayerStart; j < LayerEnd; j++)
         {
             Aig_Obj_t * pObj = pLayeredObjs[j];
             if (!pObj || !Aig_ObjIsNode(pObj)) continue;
-            Dch_ManSweepNode( pSimSat, pObj );
+            Dch_ManSweepNode( &pSimSat[0], pObj );
         }
 
-        if (pSimSat->pSat) sat_solver_delete( pSimSat->pSat );
-        ABC_FREE(pSimSat->pSatVars);
-        Vec_PtrFree(pSimSat->vSimRoots);
-        Vec_PtrFree(pSimSat->vSimClasses);
-        Vec_PtrFree(pSimSat->vUsedNodes);
-        p->nSatVars = pSimSat->nSatVars;
-        memcpy(pReprsProved, pSimSat->pReprsProved, sizeof(Aig_Obj_t *) * Aig_ManObjNumMax(p->pAigTotal));
-        ABC_FREE(pSimSat->pReprsProved);
-        ABC_FREE(pSimSat);
     }
 
     Vec_IntFree(vLayers);
     ABC_FREE(pLayers);
     ABC_FREE(pLayeredObjs);
+
+    for (int j = 0; j < NUM_THREADS; j++) {
+        if (pSimSat[j].pSat) sat_solver_delete( pSimSat[j].pSat );
+        ABC_FREE(pSimSat[j].pSatVars);
+        Vec_PtrFree(pSimSat[j].vSimRoots);
+        Vec_PtrFree(pSimSat[j].vSimClasses);
+        Vec_PtrFree(pSimSat[j].vUsedNodes);
+        p->nSatVars += pSimSat[j].nSatVars;
+        ABC_FREE(pSimSat[j].pReprsProved);
+    }
+    ABC_FREE(pSimSat);
 
     Bar_ProgressStop( pProgress );
     // update the representatives of the nodes (makes classes invalid)
