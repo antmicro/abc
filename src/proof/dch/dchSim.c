@@ -51,8 +51,9 @@ static inline unsigned Dch_ObjRandomSim()
   SeeAlso     []
 
 ***********************************************************************/
-int Dch_NodeIsConstCex( void * p, Aig_Obj_t * pObj )
+int Dch_NodeIsConstCex( void * p, Dch_SimSat_t * pSimSat, Aig_Obj_t * pObj )
 {
+    if (pSimSat) return pObj->fPhase == pSimSat->pfMarkB[pObj->Id];
     return pObj->fPhase == pObj->fMarkB;
 }
 
@@ -67,8 +68,9 @@ int Dch_NodeIsConstCex( void * p, Aig_Obj_t * pObj )
   SeeAlso     []
 
 ***********************************************************************/
-int Dch_NodesAreEqualCex( void * p, Aig_Obj_t * pObj0, Aig_Obj_t * pObj1 )
+int Dch_NodesAreEqualCex( void * p, Dch_SimSat_t * pSimSat, Aig_Obj_t * pObj0, Aig_Obj_t * pObj1 )
 {
+    if (pSimSat) return (pObj0->fPhase == pObj1->fPhase) == (pSimSat->pfMarkB[pObj0->Id] == pSimSat->pfMarkB[pObj1->Id]);
     return (pObj0->fPhase == pObj1->fPhase) == (pObj0->fMarkB == pObj1->fMarkB);
 }
 
@@ -131,7 +133,7 @@ unsigned Dch_NodeHash( void * p, Aig_Obj_t * pObj )
   SeeAlso     []
 
 ***********************************************************************/
-int Dch_NodeIsConst( void * p, Aig_Obj_t * pObj )
+int Dch_NodeIsConst( void * p, Dch_SimSat_t *, Aig_Obj_t * pObj )
 {
     Vec_Ptr_t * vSims = (Vec_Ptr_t *)p;
     unsigned * pSim;
@@ -164,7 +166,7 @@ int Dch_NodeIsConst( void * p, Aig_Obj_t * pObj )
   SeeAlso     []
 
 ***********************************************************************/
-int Dch_NodesAreEqual( void * p, Aig_Obj_t * pObj0, Aig_Obj_t * pObj1 )
+int Dch_NodesAreEqual( void * p, Dch_SimSat_t *, Aig_Obj_t * pObj0, Aig_Obj_t * pObj1 )
 {
     Vec_Ptr_t * vSims = (Vec_Ptr_t *)p;
     unsigned * pSim0, * pSim1;

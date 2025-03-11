@@ -53,6 +53,8 @@ struct Dch_SimSat_t_
     // node fields for multithreading
     int              nTravId;        // the current traversal ID
     int *            pTravIds;       // traversal ID vector
+    char *           pfMarkA;        // mark A vector
+    char *           pfMarkB;        // mark B vector
     // parameters
     Dch_Pars_t *     pPars;          // choicing parameters
     Aig_Man_t *      pAigTotal;      // intermediate AIG
@@ -164,18 +166,18 @@ extern Aig_Man_t *   Dch_DeriveChoiceAig( Aig_Man_t * pAig, int fSkipRedSupps );
 extern Dch_Cla_t *   Dch_ClassesStart( Aig_Man_t * pAig );
 extern void          Dch_ClassesSetData( Dch_Cla_t * p, void * pManData,
                          unsigned (*pFuncNodeHash)(void *,Aig_Obj_t *),
-                         int (*pFuncNodeIsConst)(void *,Aig_Obj_t *),
-                         int (*pFuncNodesAreEqual)(void *,Aig_Obj_t *, Aig_Obj_t *) );
+                         int (*pFuncNodeIsConst)(void *,Dch_SimSat_t*,Aig_Obj_t *),
+                         int (*pFuncNodesAreEqual)(void *,Dch_SimSat_t*,Aig_Obj_t *, Aig_Obj_t *) );
 extern void          Dch_ClassesStop( Dch_Cla_t * p );
 extern int           Dch_ClassesLitNum( Dch_Cla_t * p );
 extern Aig_Obj_t **  Dch_ClassesReadClass( Dch_Cla_t * p, Aig_Obj_t * pRepr, int * pnSize );
 extern void          Dch_ClassesPrint( Dch_Cla_t * p, int fVeryVerbose );
 extern void          Dch_ClassesPrepare( Dch_Cla_t * p, int fLatchCorr, int nMaxLevs );
 extern int           Dch_ClassesRefine( Dch_Cla_t * p );
-extern int           Dch_ClassesRefineOneClass( Dch_Cla_t * p, Aig_Obj_t * pRepr, int fRecursive );
+extern int           Dch_ClassesRefineOneClass( Dch_Cla_t * p, Dch_SimSat_t * pSimSat, Aig_Obj_t * pRepr, int fRecursive );
 extern void          Dch_ClassesCollectOneClass( Dch_Cla_t * p, Aig_Obj_t * pRepr, Vec_Ptr_t * vRoots );
 extern void          Dch_ClassesCollectConst1Group( Dch_Cla_t * p, Aig_Obj_t * pObj, int nNodes, Vec_Ptr_t * vRoots );
-extern int           Dch_ClassesRefineConst1Group( Dch_Cla_t * p, Vec_Ptr_t * vRoots, int fRecursive );
+extern int           Dch_ClassesRefineConst1Group( Dch_Cla_t * p, Dch_SimSat_t * pSimSat, Vec_Ptr_t * vRoots, int fRecursive );
 /*=== dchCnf.c ===================================================*/
 extern void          Dch_CnfNodeAddToSolver( Dch_SimSat_t * p, Aig_Obj_t * pObj );
 /*=== dchMan.c ===================================================*/

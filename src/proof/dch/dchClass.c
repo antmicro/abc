@@ -52,8 +52,8 @@ struct Dch_Cla_t_
     // procedures used for class refinement
     void *           pManData;
     unsigned (*pFuncNodeHash) (void *,Aig_Obj_t *);              // returns hash key of the node
-    int (*pFuncNodeIsConst)   (void *,Aig_Obj_t *);              // returns 1 if the node is a constant
-    int (*pFuncNodesAreEqual) (void *,Aig_Obj_t *, Aig_Obj_t *); // returns 1 if nodes are equal up to a complement
+    int (*pFuncNodeIsConst)   (void *,Dch_SimSat_t *,Aig_Obj_t *);              // returns 1 if the node is a constant
+    int (*pFuncNodesAreEqual) (void *,Dch_SimSat_t *,Aig_Obj_t *, Aig_Obj_t *); // returns 1 if nodes are equal up to a complement
 };
 
 ////////////////////////////////////////////////////////////////////////
@@ -162,8 +162,8 @@ Dch_Cla_t * Dch_ClassesStart( Aig_Man_t * pAig )
 ***********************************************************************/
 void Dch_ClassesSetData( Dch_Cla_t * p, void * pManData, 
     unsigned (*pFuncNodeHash)(void *,Aig_Obj_t *),               // returns hash key of the node
-    int (*pFuncNodeIsConst)(void *,Aig_Obj_t *),                 // returns 1 if the node is a constant
-    int (*pFuncNodesAreEqual)(void *,Aig_Obj_t *, Aig_Obj_t *) ) // returns 1 if nodes are equal up to a complement
+    int (*pFuncNodeIsConst)(void *,Dch_SimSat_t*,Aig_Obj_t *),                 // returns 1 if the node is a constant
+    int (*pFuncNodesAreEqual)(void *,Dch_SimSat_t*,Aig_Obj_t *, Aig_Obj_t *) ) // returns 1 if nodes are equal up to a complement
 {
     p->pManData           = pManData;
     p->pFuncNodeHash      = pFuncNodeHash;
@@ -362,7 +362,7 @@ void Dch_ClassesPrepare( Dch_Cla_t * p, int fLatchCorr, int nMaxLevs )
                 continue;
         }
         // check if the node belongs to the class of constant 1
-        if ( p->pFuncNodeIsConst( p->pManData, pObj ) )
+        if ( p->pFuncNodeIsConst( p->pManData, NULL, pObj ) )
         {
             Dch_ObjSetConst1Cand( p->pAig, pObj );
             p->nCands1++;
@@ -440,7 +440,7 @@ void Dch_ClassesPrepare( Dch_Cla_t * p, int fLatchCorr, int nMaxLevs )
   SeeAlso     []
 
 ***********************************************************************/
-int Dch_ClassesRefineOneClass( Dch_Cla_t * p, Aig_Obj_t * pReprOld, int fRecursive )
+int Dch_ClassesRefineOneClass( Dch_Cla_t * p, Dch_SimSat_t * pSimSat, Aig_Obj_t * pReprOld, int fRecursive )
 {
     Aig_Obj_t ** pClassOld, ** pClassNew;
     Aig_Obj_t * pObj, * pReprNew;
@@ -450,7 +450,7 @@ int Dch_ClassesRefineOneClass( Dch_Cla_t * p, Aig_Obj_t * pReprOld, int fRecursi
     Vec_PtrClear( p->vClassOld );
     Vec_PtrClear( p->vClassNew );
     Dch_ClassForEachNode( p, pReprOld, pObj, i )
-        if ( p->pFuncNodesAreEqual(p->pManData, pReprOld, pObj) )
+        if ( p->pFuncNodesAreEqual(p->pManData, pSimSat, pReprOld, pObj) )
             Vec_PtrPush( p->vClassOld, pObj );
         else
             Vec_PtrPush( p->vClassNew, pObj );
@@ -486,7 +486,7 @@ int Dch_ClassesRefineOneClass( Dch_Cla_t * p, Aig_Obj_t * pReprOld, int fRecursi
 
     // check if the class should be recursively refined
     if ( fRecursive && Vec_PtrSize(p->vClassNew) > 1 )
-        return 1 + Dch_ClassesRefineOneClass( p, pReprNew, 1 );
+        return 1 + Dch_ClassesRefineOneClass( p, pSimSat, pReprNew, 1 );
     return 1;
 }
 
@@ -506,7 +506,7 @@ int Dch_ClassesRefine( Dch_Cla_t * p )
     Aig_Obj_t ** ppClass;
     int i, nRefis = 0;
     Dch_ManForEachClass( p, ppClass, i )
-        nRefis += Dch_ClassesRefineOneClass( p, ppClass[0], 0 );
+        nRefis += Dch_ClassesRefineOneClass( p, NULL, ppClass[0], 0 );
     return nRefis;
 }
 
@@ -567,7 +567,7 @@ void Dch_ClassesCollectConst1Group( Dch_Cla_t * p, Aig_Obj_t * pObj, int nNodes,
   SeeAlso     []
 
 ***********************************************************************/
-int Dch_ClassesRefineConst1Group( Dch_Cla_t * p, Vec_Ptr_t * vRoots, int fRecursive )
+int Dch_ClassesRefineConst1Group( Dch_Cla_t * p, Dch_SimSat_t * pSimSat, Vec_Ptr_t * vRoots, int fRecursive )
 {
     Aig_Obj_t * pObj, * pReprNew, ** ppClassNew;
     int i;
@@ -576,7 +576,7 @@ int Dch_ClassesRefineConst1Group( Dch_Cla_t * p, Vec_Ptr_t * vRoots, int fRecurs
     // collect the nodes to be refined
     Vec_PtrClear( p->vClassNew );
     Vec_PtrForEachEntry( Aig_Obj_t *, vRoots, pObj, i )
-        if ( !p->pFuncNodeIsConst( p->pManData, pObj ) )
+        if ( !p->pFuncNodeIsConst( p->pManData, pSimSat, pObj ) )
             Vec_PtrPush( p->vClassNew, pObj );
     // check if there is a new class
     if ( Vec_PtrSize(p->vClassNew) == 0 )
@@ -597,7 +597,7 @@ int Dch_ClassesRefineConst1Group( Dch_Cla_t * p, Vec_Ptr_t * vRoots, int fRecurs
     Dch_ObjAddClass( p, pReprNew, ppClassNew, Vec_PtrSize(p->vClassNew) );
     // refine them recursively
     if ( fRecursive )
-        return 1 + Dch_ClassesRefineOneClass( p, pReprNew, 1 );
+        return 1 + Dch_ClassesRefineOneClass( p, pSimSat, pReprNew, 1 );
     return 1;
 }
 
