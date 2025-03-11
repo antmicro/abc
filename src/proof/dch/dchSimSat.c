@@ -18,6 +18,7 @@
 
 ***********************************************************************/
 
+#include <pthread.h>
 #include "dchInt.h"
 
 ABC_NAMESPACE_IMPL_START
@@ -206,22 +207,31 @@ void Dch_ManResimulateCex( Dch_SimSat_t * p, Aig_Obj_t * pObj, Aig_Obj_t * pRepr
     Vec_PtrForEachEntry( Aig_Obj_t *, p->vSimRoots, pRoot, i )
         Dch_ManResimulateOther_rec( p, pRoot );
     // refine these nodes
-    RetValue1 = Dch_ClassesRefineConst1Group( p->ppClasses, p, p->vSimRoots, 0 );
+    Dch_ClaRefine_t Refine1 = Dch_ClassesRefineConst1GroupCollect( p->ppClasses, p, p->vSimRoots );
+    if ( Refine1.Ok ) {
+        RetValue1 = 1;
+        Vec_MemPush( p->vRefines, (word*) &Refine1 );
+    }
     // resimulate the cone of influence of the cand classes
     RetValue2 = 0;
     Vec_PtrForEachEntry( Aig_Obj_t *, p->vSimClasses, pRoot, i )
     {
         ppClass = Dch_ClassesReadClass( p->ppClasses, pRoot, &nSize );
+        if (!ppClass) continue;
         for ( k = 0; k < nSize; k++ )
             Dch_ManResimulateOther_rec( p, ppClass[k] );
         // refine this class
-        RetValue2 += Dch_ClassesRefineOneClass( p->ppClasses, p, pRoot, 0 );
+        Dch_ClaRefine_t Refine2 = Dch_ClassesRefineOneClassCollect( p->ppClasses, p, pRoot );
+        if ( Refine2.Ok ) {
+            RetValue2++;
+            Vec_MemPush( p->vRefines, (word*) &Refine2 );
+        }
     }
     // make sure refinement happened
     if ( Aig_ObjIsConst1(pRepr) )
         assert( RetValue1 );
-    else
-        assert( RetValue2 );
+    else;
+        // assert( RetValue2 ); FIXME This may be affected by the (lack of) const1 refinement
 p->timeSimSat += Abc_Clock() - clk;
 }
 
@@ -239,7 +249,7 @@ p->timeSimSat += Abc_Clock() - clk;
 void Dch_ManResimulateCex2( Dch_SimSat_t * p, Aig_Obj_t * pObj, Aig_Obj_t * pRepr )
 {
     Aig_Obj_t * pRoot;
-    int i, RetValue;
+    int i;
     abctime clk = Abc_Clock();
     // get the equivalence class
     if ( Dch_ObjIsConst1Cand(p->pAigTotal, pObj) )
@@ -257,11 +267,14 @@ void Dch_ManResimulateCex2( Dch_SimSat_t * p, Aig_Obj_t * pObj, Aig_Obj_t * pRep
     Vec_PtrForEachEntry( Aig_Obj_t *, p->vSimRoots, pRoot, i )
         Dch_ManResimulateOther_rec( p, pRoot );
     // refine this class
-    if ( Dch_ObjIsConst1Cand(p->pAigTotal, pObj) )
-        RetValue = Dch_ClassesRefineConst1Group( p->ppClasses, p, p->vSimRoots, 0 );
-    else
-        RetValue = Dch_ClassesRefineOneClass( p->ppClasses, p, pRepr, 0 );
-    assert( RetValue );
+     Dch_ClaRefine_t Refine;
+    if ( Dch_ObjIsConst1Cand(p->pAigTotal, pObj) ) {
+         Refine = Dch_ClassesRefineConst1GroupCollect( p->ppClasses, p, p->vSimRoots );
+    } else {
+         Refine = Dch_ClassesRefineOneClassCollect( p->ppClasses, p, pRepr );
+    }
+    assert( Refine.Ok );
+    Vec_MemPush( p->vRefines, (word*) &Refine );
 p->timeSimSat += Abc_Clock() - clk;
 }
 

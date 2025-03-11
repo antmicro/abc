@@ -72,6 +72,7 @@ struct Dch_SimSat_t_
     Vec_Ptr_t *      vFanins;        // fanins of the CNF node
     Vec_Ptr_t *      vSimRoots;      // the roots of cand const 1 nodes to simulate
     Vec_Ptr_t *      vSimClasses;    // the roots of cand equiv classes to simulate
+    Vec_Mem_t *      vRefines;
     // solver cone size
     int              nConeThis;
     int              nConeMax;
@@ -157,6 +158,13 @@ static inline void Dch_ObjSetConst1Cand( Aig_Man_t * pAig, Aig_Obj_t * pObj )
 ///                    FUNCTION DECLARATIONS                         ///
 ////////////////////////////////////////////////////////////////////////
 
+typedef struct {
+    int Ok;
+    Aig_Obj_t * pRepr;
+    Vec_Ptr_t * vClassOld;
+    Vec_Ptr_t * vClassNew;
+} Dch_ClaRefine_t;
+
 /*=== dchAig.c ===================================================*/
 /*=== dchChoice.c ===================================================*/
 extern int           Dch_DeriveChoiceCountReprs( Aig_Man_t * pAig );
@@ -174,9 +182,13 @@ extern Aig_Obj_t **  Dch_ClassesReadClass( Dch_Cla_t * p, Aig_Obj_t * pRepr, int
 extern void          Dch_ClassesPrint( Dch_Cla_t * p, int fVeryVerbose );
 extern void          Dch_ClassesPrepare( Dch_Cla_t * p, int fLatchCorr, int nMaxLevs );
 extern int           Dch_ClassesRefine( Dch_Cla_t * p );
+extern Dch_ClaRefine_t Dch_ClassesRefineOneClassCollect( Dch_Cla_t * p, Dch_SimSat_t * pSimSat, Aig_Obj_t * pReprOld );
+extern void          Dch_ClassesRefineOneClassRefine( Dch_Cla_t * p, Vec_Ptr_t * vClassOld, Vec_Ptr_t * vClassNew, Aig_Obj_t * pReprOld );
 extern int           Dch_ClassesRefineOneClass( Dch_Cla_t * p, Dch_SimSat_t * pSimSat, Aig_Obj_t * pRepr, int fRecursive );
 extern void          Dch_ClassesCollectOneClass( Dch_Cla_t * p, Aig_Obj_t * pRepr, Vec_Ptr_t * vRoots );
 extern void          Dch_ClassesCollectConst1Group( Dch_Cla_t * p, Aig_Obj_t * pObj, int nNodes, Vec_Ptr_t * vRoots );
+extern Dch_ClaRefine_t Dch_ClassesRefineConst1GroupCollect( Dch_Cla_t * p, Dch_SimSat_t * pSimSat, Vec_Ptr_t * vRoots );
+extern void          Dch_ClassesRefineConst1GroupRefine( Dch_Cla_t * p, Vec_Ptr_t * vClassNew );
 extern int           Dch_ClassesRefineConst1Group( Dch_Cla_t * p, Dch_SimSat_t * pSimSat, Vec_Ptr_t * vRoots, int fRecursive );
 /*=== dchCnf.c ===================================================*/
 extern void          Dch_CnfNodeAddToSolver( Dch_SimSat_t * p, Aig_Obj_t * pObj );

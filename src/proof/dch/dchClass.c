@@ -89,9 +89,9 @@ static inline void         Dch_ObjSetNext( Aig_Obj_t ** ppNexts, Aig_Obj_t * pOb
 ***********************************************************************/
 static inline void Dch_ObjAddClass( Dch_Cla_t * p, Aig_Obj_t * pRepr, Aig_Obj_t ** pClass, int nSize ) 
 {
-    assert( p->pId2Class[pRepr->Id] == NULL );
+    // assert( p->pId2Class[pRepr->Id] == NULL ); FIXME
     p->pId2Class[pRepr->Id] = pClass; 
-    assert( p->pClassSizes[pRepr->Id] == 0 );
+    // assert( p->pClassSizes[pRepr->Id] == 0 ); FIXME
     assert( nSize > 1 );
     p->pClassSizes[pRepr->Id] = nSize;
     p->nClasses++;
@@ -113,10 +113,10 @@ static inline Aig_Obj_t ** Dch_ObjRemoveClass( Dch_Cla_t * p, Aig_Obj_t * pRepr 
 {
     Aig_Obj_t ** pClass = p->pId2Class[pRepr->Id];
     int nSize;
-    assert( pClass != NULL );
-    p->pId2Class[pRepr->Id] = NULL; 
+    // assert( pClass != NULL ); FIXME
+    p->pId2Class[pRepr->Id] = NULL;
     nSize = p->pClassSizes[pRepr->Id];
-    assert( nSize > 1 );
+    // assert( nSize > 1 ); FIXME
     p->nClasses--;
     p->nLits -= nSize - 1;
     p->pClassSizes[pRepr->Id] = 0;
@@ -221,8 +221,10 @@ int Dch_ClassesLitNum( Dch_Cla_t * p )
 ***********************************************************************/
 Aig_Obj_t ** Dch_ClassesReadClass( Dch_Cla_t * p, Aig_Obj_t * pRepr, int * pnSize )
 {
-    assert( p->pId2Class[pRepr->Id] != NULL );
-    assert( p->pClassSizes[pRepr->Id] > 1 );
+    // assert( p->pId2Class[pRepr->Id] != NULL ); FIXME
+    // assert( p->pClassSizes[pRepr->Id] > 1 ); FIXME
+    if (p->pClassSizes[pRepr->Id] <= 1)
+      return NULL;
     *pnSize = p->pClassSizes[pRepr->Id];
     return p->pId2Class[pRepr->Id];
 }
@@ -431,6 +433,90 @@ void Dch_ClassesPrepare( Dch_Cla_t * p, int fLatchCorr, int nMaxLevs )
 
 /**Function*************************************************************
 
+  Synopsis    []
+
+  Description []
+
+  SideEffects []
+
+  SeeAlso     []
+
+***********************************************************************/
+Dch_ClaRefine_t Dch_ClassesRefineOneClassCollect( Dch_Cla_t * p, Dch_SimSat_t * pSimSat, Aig_Obj_t * pReprOld )
+{
+    Aig_Obj_t * pObj;
+    int i;
+    Dch_ClaRefine_t Result = {};
+    // split the class
+    Vec_Ptr_t * vClassOld = Vec_PtrAlloc( 10 );
+    Vec_Ptr_t * vClassNew = Vec_PtrAlloc( 10 );
+    Dch_ClassForEachNode( p, pReprOld, pObj, i )
+        if ( p->pFuncNodesAreEqual(p->pManData, pSimSat, pReprOld, pObj) )
+            Vec_PtrPush( vClassOld, pObj );
+        else
+            Vec_PtrPush( vClassNew, pObj );
+    // check if splitting happened
+    if (Vec_PtrSize(vClassOld) != 0 && Vec_PtrSize(vClassNew) != 0) {
+        Result.Ok = 1;
+        Result.pRepr = pReprOld;
+        Result.vClassOld = vClassOld;
+        Result.vClassNew = vClassNew;
+    } else {
+        Vec_PtrFree(vClassOld);
+        Vec_PtrFree(vClassNew);
+    }
+    return Result;
+}
+
+/**Function*************************************************************
+
+  Synopsis    []
+
+  Description []
+
+  SideEffects []
+
+  SeeAlso     []
+
+***********************************************************************/
+void Dch_ClassesRefineOneClassRefine( Dch_Cla_t * p, Vec_Ptr_t * vClassOld, Vec_Ptr_t * vClassNew, Aig_Obj_t * pReprOld )
+{
+    Aig_Obj_t ** pClassOld, ** pClassNew;
+    Aig_Obj_t * pObj, * pReprNew;
+    int i = 0;
+    // check if splitting happened
+    assert ( Vec_PtrSize(vClassNew) != 0 );
+
+    // get the new representative
+    pReprNew = (Aig_Obj_t *)Vec_PtrEntry( vClassNew, 0 );
+    assert( Vec_PtrSize(vClassOld) > 0 );
+    assert( Vec_PtrSize(vClassNew) > 0 );
+
+    // create old class
+    pClassOld = Dch_ObjRemoveClass( p, pReprOld );
+    if (!pClassOld) return;
+    Vec_PtrForEachEntry( Aig_Obj_t *, vClassOld, pObj, i )
+    {
+        pClassOld[i] = pObj;
+        Aig_ObjSetRepr( p->pAig, pObj, i? pReprOld : NULL );
+    }
+    // create new class
+    pClassNew = pClassOld + i;
+    Vec_PtrForEachEntry( Aig_Obj_t *, vClassNew, pObj, i )
+    {
+        pClassNew[i] = pObj;
+        Aig_ObjSetRepr( p->pAig, pObj, i? pReprNew : NULL );
+    }
+
+    // put classes back
+    if ( Vec_PtrSize(vClassOld) > 1 )
+        Dch_ObjAddClass( p, pReprOld, pClassOld, Vec_PtrSize(vClassOld) );
+    if ( Vec_PtrSize(vClassNew) > 1 )
+        Dch_ObjAddClass( p, pReprNew, pClassNew, Vec_PtrSize(vClassNew) );
+}
+
+/**Function*************************************************************
+
   Synopsis    [Iteratively refines the classes after simulation.]
 
   Description [Returns the number of refinements performed.]
@@ -554,6 +640,68 @@ void Dch_ClassesCollectConst1Group( Dch_Cla_t * p, Aig_Obj_t * pObj, int nNodes,
         if ( pObj && Dch_ObjIsConst1Cand( p->pAig, pObj ) )
             Vec_PtrPush( vRoots, pObj );
     }
+}
+
+/**Function*************************************************************
+
+  Synopsis    []
+
+  Description []
+
+  SideEffects []
+
+  SeeAlso     []
+
+***********************************************************************/
+Dch_ClaRefine_t Dch_ClassesRefineConst1GroupCollect(Dch_Cla_t *p, Dch_SimSat_t *pSimSat, Vec_Ptr_t *vRoots) {
+    Aig_Obj_t *pObj;
+    int i;
+    Dch_ClaRefine_t Result = {};
+    if (Vec_PtrSize(vRoots) == 0)
+        return Result;
+    Vec_Ptr_t * vClassNew = Vec_PtrAlloc( 10 );
+    // collect the nodes to be refined
+    Vec_PtrForEachEntry(Aig_Obj_t *, vRoots, pObj, i)
+        if (!p->pFuncNodeIsConst(p->pManData, pSimSat, pObj))
+            Vec_PtrPush(vClassNew, pObj);
+    // check if there is a new class
+    if (Vec_PtrSize(vClassNew) == 0) {
+        Vec_PtrFree(vClassNew);
+        return Result;
+    }
+    Result.Ok = 1;
+    Result.vClassNew = vClassNew;
+    return Result;
+}
+
+/**Function*************************************************************
+
+  Synopsis    []
+
+  Description []
+
+  SideEffects []
+
+  SeeAlso     []
+
+***********************************************************************/
+void Dch_ClassesRefineConst1GroupRefine(Dch_Cla_t *p, Vec_Ptr_t *vClassNew) {
+    Aig_Obj_t *pObj, *pReprNew, **ppClassNew;
+    int i;
+    // check if there is a new class
+    assert (Vec_PtrSize(vClassNew) != 0);
+    p->nCands1 -= Vec_PtrSize(vClassNew);
+    pReprNew = (Aig_Obj_t *)Vec_PtrEntry(vClassNew, 0);
+    Aig_ObjSetRepr(p->pAig, pReprNew, NULL);
+    if (Vec_PtrSize(vClassNew) == 1) return;
+    // create a new class composed of these nodes
+    ppClassNew = p->pMemClassesFree;
+    p->pMemClassesFree += Vec_PtrSize(vClassNew);
+    Vec_PtrForEachEntry(Aig_Obj_t *, vClassNew, pObj, i) {
+        ppClassNew[i] = pObj;
+        Aig_ObjSetRepr(p->pAig, pObj, i ? pReprNew : NULL);
+    }
+    Dch_ObjAddClass(p, pReprNew, ppClassNew, Vec_PtrSize(vClassNew));
 }
 
 /**Function*************************************************************

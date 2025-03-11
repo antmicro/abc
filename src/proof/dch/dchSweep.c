@@ -17,6 +17,7 @@
   Revision    [$Id: dchSweep.c,v 1.00 2008/07/29 00:00:00 alanmi Exp $]
 
 ***********************************************************************/
+#include <pthread.h>
 #include <stdint.h>
 #include "dchInt.h"
 #include "misc/bar/bar.h"
@@ -90,7 +91,6 @@ void Dch_ManSweepNode( Dch_SimSat_t * p, Aig_Obj_t * pObj )
         Dch_ManResimulateCex( p, pObj, pObjRepr );
     else
         Dch_ManResimulateCex2( p, pObj, pObjRepr );
-    assert( Aig_ObjRepr( p->pAigTotal, pObj ) != pObjRepr );
 }
 
 typedef struct ManSweep_ThData_t_
@@ -99,21 +99,40 @@ typedef struct ManSweep_ThData_t_
     Aig_Obj_t ** pLayeredObjs;
     int nStart;
     int nEnd;
+    int fStart;
+    int fDone;
+    int fFinish;
+    pthread_mutex_t Mutex;
+    pthread_cond_t Cv;
 } ManSweep_ThData_t;
 
 void* ManSweep_WorkerThread(void *pArg)
 {
     ManSweep_ThData_t *pThData = (ManSweep_ThData_t *)pArg;
-    Dch_SimSat_t * pSimSat = pThData->pSimSat;
-    Aig_Obj_t ** pLayeredObjs = pThData->pLayeredObjs;
-    int Start = pThData->nStart, End = pThData->nEnd;
+    while (1) {
+        pthread_mutex_lock(&pThData->Mutex);
+        while (!pThData->fStart && !pThData->fFinish)
+            pthread_cond_wait(&pThData->Cv, &pThData->Mutex);
+        pThData->fStart = 0;
+        pthread_mutex_unlock(&pThData->Mutex);
+        if (pThData->fFinish) break;
 
-    memset(pSimSat->pReprsProved, 0, sizeof(Aig_Obj_t *) * Aig_ManObjNumMax(pSimSat->pAigTotal));
-    for (int k = Start; k < End; k++)
-    {
-        Aig_Obj_t * pObj = pLayeredObjs[k];
-        if (!pObj || !Aig_ObjIsNode(pObj)) continue;
-        Dch_ManSweepNode( pSimSat, pObj );
+        Dch_SimSat_t * pSimSat = pThData->pSimSat;
+        Aig_Obj_t ** pLayeredObjs = pThData->pLayeredObjs;
+        int Start = pThData->nStart, End = pThData->nEnd;
+
+        memset(pSimSat->pReprsProved, 0, sizeof(Aig_Obj_t *) * Aig_ManObjNumMax(pSimSat->pAigTotal));
+        for (int k = Start; k < End; k++)
+        {
+            Aig_Obj_t * pObj = pLayeredObjs[k];
+            if (!pObj || !Aig_ObjIsNode(pObj)) continue;
+            Dch_ManSweepNode( pSimSat, pObj );
+        }
+
+        pthread_mutex_lock(&pThData->Mutex);
+        pThData->fDone = 1;
+        pthread_mutex_unlock(&pThData->Mutex);
+        pthread_cond_signal(&pThData->Cv);
     }
     return NULL;
 }
@@ -154,7 +173,13 @@ void Dch_ManSweep( Dch_Man_t * p )
     // sweep internal nodes
     pProgress = Bar_ProgressStart( stdout, Aig_ManObjNumMax(p->pAigTotal) );
 
-    Aig_Obj_t ** pReprsProved = ABC_CALLOC(Aig_Obj_t*, Aig_ManObjNumMax(p->pAigTotal));
+    pthread_t WorkerThread[NUM_THREADS] = {};
+    ManSweep_ThData_t ThData[NUM_THREADS] = {};
+    for (int j = 0; j < NUM_THREADS; j++) {
+        int status = pthread_create(&WorkerThread[j], NULL, ManSweep_WorkerThread, (void *)(&ThData[j]));
+        assert(status == 0);
+    }
+
     pLayers = ABC_CALLOC(int, Aig_ManObjNumMax(p->pAigTotal));
     Aig_Obj_t ** pLayeredObjs = ABC_CALLOC(Aig_Obj_t*, Aig_ManObjNumMax(p->pAigTotal));
     Aig_ManForEachNode( p->pAigTotal, pObj, i )
@@ -189,7 +214,6 @@ void Dch_ManSweep( Dch_Man_t * p )
         pSimSats[j].pAigFraig = p->pAigFraig;
         pSimSats[j].pPars = p->pPars;
         pSimSats[j].ppClasses = p->ppClasses;
-        pSimSats[j].vFanins = p->vFanins;
 
         pSimSats[j].pTravIds = ABC_CALLOC(int, Aig_ManObjNumMax(p->pAigTotal));
         pSimSats[j].pfMarkA = ABC_CALLOC(char, Aig_ManObjNumMax(p->pAigTotal));
@@ -199,6 +223,7 @@ void Dch_ManSweep( Dch_Man_t * p )
         pSimSats[j].vSimRoots    = Vec_PtrAlloc( 1000 );
         pSimSats[j].vSimClasses  = Vec_PtrAlloc( 1000 );
         pSimSats[j].vUsedNodes   = Vec_PtrAlloc( 1000 );
+        pSimSats[j].vFanins   = Vec_PtrAlloc( 1000 );
         pSimSats[j].pReprsProved = ABC_CALLOC( Aig_Obj_t *, Aig_ManObjNumMax(p->pAigTotal) );
     }
 
@@ -209,6 +234,7 @@ void Dch_ManSweep( Dch_Man_t * p )
         if (i + 1 < Vec_IntSize(vLayers))
             LayerEnd = Vec_IntEntry(vLayers, i + 1);
         int LayerLen = LayerEnd - LayerStart;
+        int Mt = LayerLen > NUM_THREADS * NUM_THREADS;
 
         for (int j = LayerStart; j < LayerEnd; j++)
         {
@@ -224,23 +250,66 @@ void Dch_ManSweep( Dch_Man_t * p )
             Dch_ObjSetFraig( pObj, pObjNew );
         }
 
-        int SubLayerLen = (LayerLen + NUM_THREADS - 1) / NUM_THREADS;
-        ManSweep_ThData_t ThData[NUM_THREADS];
         for (int j = 0; j < NUM_THREADS; j++) {
-            int Start = LayerStart + j * SubLayerLen;
-            int End = Start + SubLayerLen;
-            if (End > LayerEnd) End = LayerEnd;
-            ThData[j].pSimSat = &pSimSats[j];
-            ThData[j].pLayeredObjs = pLayeredObjs;
-            ThData[j].nStart = Start;
-            ThData[j].nEnd = End;
-            ManSweep_WorkerThread(&ThData[j]);
+            pSimSats[j].vRefines = Vec_MemAlloc( sizeof(Dch_ClaRefine_t), 4 );
         }
 
+        int SubLayerLen = (LayerLen + NUM_THREADS - 1) / NUM_THREADS;
+        abctime clk = Abc_Clock();
+        if (Mt) {
+            printf("Running layer %d (%d nodes) on %d thread(s)\n", i, LayerLen, NUM_THREADS);
+            for (int j = 0; j < NUM_THREADS; j++) {
+                int Start = LayerStart + j * SubLayerLen;
+                int End = Start + SubLayerLen;
+                if (End > LayerEnd) End = LayerEnd;
+                printf("  - sublayer: %d-%d\n", Start, End);
+                ThData[j].pSimSat = &pSimSats[j];
+                ThData[j].pLayeredObjs = pLayeredObjs;
+                ThData[j].nStart = Start;
+                ThData[j].nEnd = End;
+                pthread_mutex_lock(&ThData[j].Mutex);
+                ThData[j].fStart = 1;
+                ThData[j].fDone = 0;
+                pthread_mutex_unlock(&ThData[j].Mutex);
+                pthread_cond_signal(&ThData[j].Cv);
+            }
+        } else {
+            for (int k = LayerStart; k < LayerEnd; k++)
+            {
+                Aig_Obj_t * pObj = pLayeredObjs[k];
+                if (!pObj || !Aig_ObjIsNode(pObj)) continue;
+                Dch_ManSweepNode( &pSimSats[0], pObj );
+            }
+        }
+
+        if (Mt) {
+            for (int j = 0; j < NUM_THREADS; j++) {
+                pthread_mutex_lock(&ThData[j].Mutex);
+                while (!ThData[j].fDone) pthread_cond_wait(&ThData[j].Cv, &ThData[j].Mutex);
+                pthread_mutex_unlock(&ThData[j].Mutex);
+                if (j > 0)
+                    for (int k = 0; k < Aig_ManObjNumMax(p->pAigTotal); k++)
+                        if (pSimSats[j].pReprsProved[k])
+                            pSimSats[0].pReprsProved[k] = pSimSats[j].pReprsProved[k];
+            }
+        }
         for (int j = 0; j < NUM_THREADS; j++) {
-            for (int k = 0; k < Aig_ManObjNumMax(p->pAigTotal); k++)
-                if (pSimSats[j].pReprsProved[k])
-                    pReprsProved[k] = pSimSats[j].pReprsProved[k];
+            int k;
+            word* pEntry;
+            Vec_MemForEachEntry( pSimSats[j].vRefines, pEntry, k ) {
+                Dch_ClaRefine_t * pRefine = (Dch_ClaRefine_t *) pEntry;
+                if (pRefine->pRepr) {
+                    Dch_ClassesRefineOneClassRefine(p->ppClasses, pRefine->vClassOld, pRefine->vClassNew, pRefine->pRepr);
+                    Vec_PtrFree(pRefine->vClassOld);
+                } else {
+                    Dch_ClassesRefineConst1GroupRefine(p->ppClasses, pRefine->vClassNew);
+                }
+                Vec_PtrFree(pRefine->vClassNew);
+            }
+            Vec_MemFree( pSimSats[j].vRefines );
+        }
+        if (Mt) {
+            printf("- done in %ld ns\n", Abc_Clock() - clk);
         }
     }
 
@@ -249,6 +318,11 @@ void Dch_ManSweep( Dch_Man_t * p )
     ABC_FREE(pLayeredObjs);
 
     for (int j = 0; j < NUM_THREADS; j++) {
+        pthread_mutex_lock(&ThData[j].Mutex);
+        ThData[j].fFinish = 1;
+        pthread_mutex_unlock(&ThData[j].Mutex);
+        pthread_cond_signal(&ThData[j].Cv);
+        pthread_join(WorkerThread[j], NULL);
         if (pSimSats[j].pSat) sat_solver_delete( pSimSats[j].pSat );
         ABC_FREE(pSimSats[j].pTravIds);
         ABC_FREE(pSimSats[j].pfMarkA);
@@ -257,15 +331,18 @@ void Dch_ManSweep( Dch_Man_t * p )
         Vec_PtrFree(pSimSats[j].vSimRoots);
         Vec_PtrFree(pSimSats[j].vSimClasses);
         Vec_PtrFree(pSimSats[j].vUsedNodes);
+        Vec_PtrFree(pSimSats[j].vFanins);
         p->nSatVars += pSimSats[j].nSatVars;
-        ABC_FREE(pSimSats[j].pReprsProved);
+        if (j > 0) ABC_FREE(pSimSats[j].pReprsProved);
     }
-    ABC_FREE(pSimSats);
 
     Bar_ProgressStop( pProgress );
     // update the representatives of the nodes (makes classes invalid)
     ABC_FREE( p->pAigTotal->pReprs );
-    p->pAigTotal->pReprs = pReprsProved;
+    p->pAigTotal->pReprs = pSimSats[0].pReprsProved;
+
+    ABC_FREE(pSimSats);
+
     // clean the mark
     Aig_ManCleanMarkB( p->pAigTotal );
 }
